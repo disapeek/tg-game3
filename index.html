@@ -7,8 +7,8 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
-            --tg-theme-bg-color: #f5f5f5;
-            --tg-theme-text-color: #222;
+            --tg-theme-bg-color: #1f1f1f;
+            --tg-theme-text-color: #ffffff;
             --tg-theme-button-color: #3897f0;
             --tg-theme-button-text-color: #ffffff;
         }
@@ -28,41 +28,215 @@
 
         #header {
             width: 100%;
-            padding: 10px;
+            padding: 15px 0;
             display: flex;
             justify-content: space-around;
             align-items: center;
-            background: rgba(0,0,0,0.05);
+            background: rgba(255,255,255,0.05);
             font-weight: bold;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
         }
 
-        #score { font-size: 1.2em; }
+        #score { font-size: 1.2em; color: #ffcc00; }
 
         #game-grid {
             display: grid;
             grid-template-columns: repeat(8, 1fr);
             grid-template-rows: repeat(8, 1fr);
-            gap: 4px;
+            gap: 5px;
             width: 90vw;
             height: 90vw;
-            max-width: 400px;
-            max-height: 400px;
-            margin-top: 20px;
-            background-color: #ddd;
-            border-radius: 8px;
-            padding: 4px;
+            max-width: 360px;
+            max-height: 360px;
+            margin-top: 30px;
+            background-color: #333;
+            border-radius: 12px;
+            padding: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
         }
 
         .block {
-            border-radius: 4px;
+            border-radius: 6px;
             cursor: pointer;
             transition: transform 0.1s ease-in-out, opacity 0.2s;
         }
 
         .block:active {
-            transform: scale(0.9);
+            transform: scale(0.85);
         }
 
-        .color-0 { background-color: #ff5f5f; }
-        .color-1 { background-color: #5fff5f; }
-        .color-2 { background-color: #5f5fff; }
+        .color-0 { background-color: #ff4a4a; box-shadow: inset 0 -3px rgba(0,0,0,0.2); }
+        .color-1 { background-color: #4aff4a; box-shadow: inset 0 -3px rgba(0,0,0,0.2); }
+        .color-2 { background-color: #4a4aff; box-shadow: inset 0 -3px rgba(0,0,0,0.2); }
+        .color-3 { background-color: #ffff4a; box-shadow: inset 0 -3px rgba(0,0,0,0.2); }
+        .color-4 { background-color: #ff4aff; box-shadow: inset 0 -3px rgba(0,0,0,0.2); }
+
+        #reset-btn {
+            margin-top: 30px;
+            background-color: var(--tg-theme-button-color);
+            color: var(--tg-theme-button-text-color);
+            border: none;
+            padding: 14px 28px;
+            font-size: 1.1em;
+            font-weight: bold;
+            border-radius: 10px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(56, 151, 240, 0.4);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="header">
+        <span id="username">Игрок</span>
+        <span id="score">Счет: 0</span>
+    </div>
+
+    <div id="game-grid"></div>
+
+    <button id="reset-btn">Новая игра</button>
+
+    <script>
+        let tg = null;
+        if (window.Telegram && window.Telegram.WebApp) {
+            tg = window.Telegram.WebApp;
+            try {
+                tg.expand();
+                tg.ready();
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
+            document.getElementById('username').innerText = tg.initDataUnsafe.user.first_name;
+        }
+
+        const GRID_SIZE = 8;
+        const NUM_COLORS = 5;
+        let score = 0;
+        let grid = [];
+
+        const gridEl = document.getElementById('game-grid');
+        const scoreEl = document.getElementById('score');
+        const resetBtn = document.getElementById('reset-btn');
+
+        function initGame() {
+            score = 0;
+            updateScore();
+            createGrid();
+            renderGrid();
+        }
+
+        function createGrid() {
+            grid = [];
+            for (let r = 0; r < GRID_SIZE; r++) {
+                grid[r] = [];
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    grid[r][c] = Math.floor(Math.random() * NUM_COLORS);
+                }
+            }
+        }
+
+        function renderGrid() {
+            gridEl.innerHTML = '';
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    const block = document.createElement('div');
+                    block.className = `block color-${grid[r][c]}`;
+                    block.dataset.row = r;
+                    block.dataset.col = c;
+                    block.onclick = () => handleBlockClick(r, c);
+                    gridEl.appendChild(block);
+                }
+            }
+        }
+
+        function handleBlockClick(r, c) {
+            const color = grid[r][c];
+            if (color === -1) return;
+
+            const cluster = findCluster(r, c, color);
+
+            if (cluster.length < 3) {
+                if (tg && tg.HapticFeedback) {
+                    try { tg.HapticFeedback.notificationOccurred('warning'); } catch(e){}
+                }
+                return; 
+            }
+
+            cluster.forEach(pos => {
+                grid[pos.r][pos.c] = -1;
+            });
+
+            score += Math.pow(cluster.length, 2);
+            updateScore();
+            
+            if (tg && tg.HapticFeedback) {
+                try { tg.HapticFeedback.impactOccurred('medium'); } catch(e){}
+            }
+
+            applyGravity();
+            fillEmpty();
+            renderGrid();
+        }
+
+        function findCluster(r, c, color) {
+            const cluster = [];
+            const queue = [{r, c}];
+            const visited = new Set();
+
+            while (queue.length > 0) {
+                const curr = queue.shift();
+                const key = `${curr.r},${curr.c}`;
+
+                if (visited.has(key)) continue;
+                if (curr.r < 0 || curr.r >= GRID_SIZE || curr.c < 0 || curr.c >= GRID_SIZE) continue;
+                if (grid[curr.r][curr.c] !== color) continue;
+
+                visited.add(key);
+                cluster.push(curr);
+
+                queue.push({r: curr.r - 1, c: curr.c});
+                queue.push({r: curr.r + 1, c: curr.c});
+                queue.push({r: curr.r, c: curr.c - 1});
+                queue.push({r: curr.r, c: curr.c + 1});
+            }
+            return cluster;
+        }
+
+        function applyGravity() {
+            for (let c = 0; c < GRID_SIZE; c++) {
+                let emptyRow = GRID_SIZE - 1;
+                for (let r = GRID_SIZE - 1; r >= 0; r--) {
+                    if (grid[r][c] !== -1) {
+                        if (emptyRow !== r) {
+                            grid[emptyRow][c] = grid[r][c];
+                            grid[r][c] = -1;
+                        }
+                        emptyRow--;
+                    }
+                }
+            }
+        }
+
+        function fillEmpty() {
+            for (let c = 0; c < GRID_SIZE; c++) {
+                for (let r = 0; r < GRID_SIZE; r++) {
+                    if (grid[r][c] === -1) {
+                        grid[r][c] = Math.floor(Math.random() * NUM_COLORS);
+                    }
+                }
+            }
+        }
+
+        function updateScore() {
+            scoreEl.innerText = `Счет: ${score}`;
+        }
+
+        resetBtn.onclick = initGame;
+
+        initGame();
+    </script>
+</body>
+</html>
